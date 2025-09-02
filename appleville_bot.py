@@ -1,109 +1,70 @@
-import requests
-import time
-import random
-from colorama import Fore, Style, init
+import requests, time, uuid, re, os
 
-# Init colors
-init(autoreset=True)
+COOKIES_FILE = "cookies.txt"
 
-# Load cookies from file
-with open("cookies.txt", "r") as f:
-    COOKIES = f.read().strip()
+def load_cookies():
+    if not os.path.exists(COOKIES_FILE):
+        print(f"❌ Missing {COOKIES_FILE}, please create it with your cookie string")
+        exit()
+    return open(COOKIES_FILE).read().strip()
 
-# Load proxy list
-try:
-    with open("proxy.txt", "r") as f:
-        PROXIES = [line.strip() for line in f if line.strip()]
-except FileNotFoundError:
-    PROXIES = []
+def get_meta_hash():
+    url = "https://app.appleville.xyz/"
+    r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, cookies=parse_cookie_dict(load_cookies()))
+    match = re.search(r'"x-meta-hash"\s*:\s*"([a-f0-9]{64})"', r.text)
+    if match:
+        meta = match.group(1)
+        print(f"🔑 Latest x-meta-hash: {meta}")
+        return meta
+    print("⚠️ Could not find x-meta-hash, using fallback")
+    return "432793e091906336415ec70862ce8b00cb2eb23620208080363a838be032ad09"
 
-# Create session
-session = requests.Session()
-session.headers.update({
-    "User-Agent": "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0 Safari/537.36",
-    "Accept": "application/json, text/plain, */*",
-    "Cookie": COOKIES,
-})
+def parse_cookie_dict(cookie_string):
+    cookies = {}
+    for part in cookie_string.split(";"):
+        if "=" in part:
+            k, v = part.strip().split("=", 1)
+            cookies[k] = v
+    return cookies
 
-def debug_request(method, url, **kwargs):
-    """Wrapper to log headers + response for debugging"""
-    print(Fore.YELLOW + f"\n=== DEBUG {method.upper()} {url} ===")
-    print(Fore.CYAN + "Headers being sent:")
-    for k, v in session.headers.items():
-        print(f"{k}: {v}")
-    if "headers" in kwargs:
-        for k, v in kwargs["headers"].items():
-            print(f"{k}: {v}")
-    print(Fore.CYAN + "=============================")
+def get_headers(meta_hash):
+    return {
+        "Referer": "https://app.appleville.xyz/",
+        "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36",
+        "content-type": "application/json",
+        "sec-ch-ua": '"Chromium";v="130", "Mises";v="130", "Not?A_Brand";v="99", "Google Chrome";v="130"',
+        "sec-ch-ua-mobile": "?1",
+        "sec-ch-ua-platform": '"Android"',
+        "trpc-accept": "application/jsonl",
+        "x-client-time": str(int(time.time() * 1000)),
+        "x-meta-hash": meta_hash,
+        "x-trace-id": uuid.uuid4().hex,
+        "x-trpc-source": "nextjs-react",
+        "cookie": load_cookies()
+    }
 
-    try:
-        if method.lower() == "get":
-            resp = session.get(url, **kwargs)
-        else:
-            resp = session.post(url, **kwargs)
+def harvest(slot_index, meta_hash):
+    url = "https://app.appleville.xyz/api/trpc/core.harvest?batch=1"
+    payload = {"0": {"json": {"slotIndexes": [slot_index]}}}
+    r = requests.post(url, headers=get_headers(meta_hash), json=payload)
+    print("🌱 Harvest:", r.status_code, r.text[:200])
 
-        print(Fore.MAGENTA + f"Response Status: {resp.status_code}")
-        print(Fore.WHITE + resp.text[:500])  # print only first 500 chars
-        return resp
-    except Exception as e:
-        print(Fore.RED + f"❌ Request failed: {e}")
-        return None
+def buy(item_key, quantity, meta_hash):
+    url = "https://app.appleville.xyz/api/trpc/core.buyItem?batch=1"
+    payload = {"0": {"json": {"purchases": [{"key": item_key, "quantity": quantity}]}}}
+    r = requests.post(url, headers=get_headers(meta_hash), json=payload)
+    print("🛒 Buy:", r.status_code, r.text[:200])
 
-def harvest():
-    url = "https://app.appleville.xyz/api/harvest"  # adjust if wrong
-    resp = debug_request("post", url, json={})
-    return resp
-
-def buy():
-    url = "https://app.appleville.xyz/api/buy"
-    resp = debug_request("post", url, json={"item": "seed"})
-    return resp
-
-def plant():
-    url = "https://app.appleville.xyz/api/plant"
-    resp = debug_request("post", url, json={"seed": "basic"})
-    return resp
-
-def get_points():
-    url = "https://app.appleville.xyz/api/points"
-    resp = debug_request("get", url)
-    if resp and resp.status_code == 200:
-        try:
-            return resp.json().get("points", 0)
-        except:
-            return 0
-    return 0
-
-def main():
-    proxy = None
-    if PROXIES:
-        proxy = random.choice(PROXIES)
-        session.proxies.update({
-            "http": proxy,
-            "https": proxy
-        })
-
-    print(Fore.GREEN + f"=== 🚀 Running Account 1 with proxy: {proxy} ===")
-
-    while True:
-        # Harvest
-        print(Fore.YELLOW + "🌾 Trying to harvest...")
-        harvest()
-
-        # Buy
-        print(Fore.CYAN + "🛒 Trying to buy...")
-        buy()
-
-        # Plant
-        print(Fore.GREEN + "🌱 Trying to plant...")
-        plant()
-
-        # Show Points
-        points = get_points()
-        print(Fore.MAGENTA + f"⭐ Current Points: {points}")
-
-        print(Fore.BLUE + "⏳ Waiting 30s before next cycle...\n")
-        time.sleep(30)
+def plant(slot_index, seed_key, meta_hash):
+    url = "https://app.appleville.xyz/api/trpc/core.plantSeed?batch=1"
+    payload = {"0": {"json": {"slotIndex": slot_index, "seedKey": seed_key}}}
+    r = requests.post(url, headers=get_headers(meta_hash), json=payload)
+    print("🌳 Plant:", r.status_code, r.text[:200])
 
 if __name__ == "__main__":
-    main()
+    print("=== 🚀 Running Appleville Bot ===")
+    meta_hash = get_meta_hash()  # auto fetch latest
+    
+    harvest(4, meta_hash)               # Example: harvest slot 4
+    buy("golden-apple", 1, meta_hash)   # Example: buy 1 golden apple
+    plant(4, "golden-apple", meta_hash) # Example: plant golden apple in slot 4
