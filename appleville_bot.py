@@ -1,124 +1,109 @@
 import requests
 import time
 import random
-import json
-import os
 from colorama import Fore, Style, init
 
-# Initialize colorama
+# Init colors
 init(autoreset=True)
 
-# === CONFIG ===
-COOKIE_FILE = "cookies.txt"
-CYCLE_DELAY = 30  # seconds between each farming cycle
+# Load cookies from file
+with open("cookies.txt", "r") as f:
+    COOKIES = f.read().strip()
 
-# Load cookie from file
-if os.path.exists(COOKIE_FILE):
-    with open(COOKIE_FILE", "r") as f:
-        COOKIE = f.read().strip()
-else:
-    print(Fore.RED + f"❌ No {COOKIE_FILE} found. Please create it and paste your cookie inside.")
-    exit()
+# Load proxy list
+try:
+    with open("proxy.txt", "r") as f:
+        PROXIES = [line.strip() for line in f if line.strip()]
+except FileNotFoundError:
+    PROXIES = []
 
-# Load proxies if available
-proxies_list = []
-if os.path.exists("proxy.txt"):
-    with open("proxy.txt") as f:
-        proxies_list = [line.strip() for line in f if line.strip()]
+# Create session
+session = requests.Session()
+session.headers.update({
+    "User-Agent": "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0 Safari/537.36",
+    "Accept": "application/json, text/plain, */*",
+    "Cookie": COOKIES,
+})
 
-# API Endpoints
-BASE_URL = "https://app.appleville.xyz/api/trpc/core"
-HARVEST_URL = f"{BASE_URL}.harvest?batch=1"
-BUY_URL = f"{BASE_URL}.buyItem?batch=1"
-PLANT_URL = f"{BASE_URL}.plantSeed?batch=1"
+def debug_request(method, url, **kwargs):
+    """Wrapper to log headers + response for debugging"""
+    print(Fore.YELLOW + f"\n=== DEBUG {method.upper()} {url} ===")
+    print(Fore.CYAN + "Headers being sent:")
+    for k, v in session.headers.items():
+        print(f"{k}: {v}")
+    if "headers" in kwargs:
+        for k, v in kwargs["headers"].items():
+            print(f"{k}: {v}")
+    print(Fore.CYAN + "=============================")
 
-# Headers
-headers = {
-    "Cookie": COOKIE,
-    "Content-Type": "application/json",
-    "Accept": "*/*",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Origin": "https://app.appleville.xyz",
-    "Referer": "https://app.appleville.xyz/",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                  "AppleWebKit/537.36 (KHTML, like Gecko) "
-                  "Chrome/116.0.0.0 Safari/537.36"
-}
+    try:
+        if method.lower() == "get":
+            resp = session.get(url, **kwargs)
+        else:
+            resp = session.post(url, **kwargs)
 
-
-def get_proxy():
-    if not proxies_list:
+        print(Fore.MAGENTA + f"Response Status: {resp.status_code}")
+        print(Fore.WHITE + resp.text[:500])  # print only first 500 chars
+        return resp
+    except Exception as e:
+        print(Fore.RED + f"❌ Request failed: {e}")
         return None
-    proxy = random.choice(proxies_list)
-    return {"http": proxy, "https": proxy}
 
+def harvest():
+    url = "https://app.appleville.xyz/api/harvest"  # adjust if wrong
+    resp = debug_request("post", url, json={})
+    return resp
 
-def harvest(proxy=None):
-    payload = {"0": {"json": {"slotIndexes": [4]}}}
-    try:
-        r = requests.post(HARVEST_URL, headers=headers, json=payload, proxies=proxy, timeout=15)
-        if r.status_code == 200:
-            print(Fore.GREEN + "✅ Harvest success:", r.text)
-        else:
-            print(Fore.RED + f"❌ Harvest failed: {r.text}")
-    except Exception as e:
-        print(Fore.RED + f"⚠️ Harvest error: {e}")
+def buy():
+    url = "https://app.appleville.xyz/api/buy"
+    resp = debug_request("post", url, json={"item": "seed"})
+    return resp
 
+def plant():
+    url = "https://app.appleville.xyz/api/plant"
+    resp = debug_request("post", url, json={"seed": "basic"})
+    return resp
 
-def buy(proxy=None):
-    payload = {"0": {"json": {"purchases": [{"key": "golden-apple", "quantity": 1}]}}}
-    try:
-        r = requests.post(BUY_URL, headers=headers, json=payload, proxies=proxy, timeout=15)
-        if r.status_code == 200:
-            print(Fore.GREEN + "✅ Buy success:", r.text)
-        else:
-            print(Fore.RED + f"❌ Buy failed: {r.text}")
-    except Exception as e:
-        print(Fore.RED + f"⚠️ Buy error: {e}")
-
-
-def plant(proxy=None):
-    payload = {"0": {"json": {"plantings": [{"slotIndex": 4, "seedKey": "golden-apple"}]}}}
-    try:
-        r = requests.post(PLANT_URL, headers=headers, json=payload, proxies=proxy, timeout=15)
-        if r.status_code == 200:
-            print(Fore.GREEN + "✅ Plant success:", r.text)
-        else:
-            print(Fore.RED + f"❌ Plant failed: {r.text}")
-    except Exception as e:
-        print(Fore.RED + f"⚠️ Plant error: {e}")
-
-
-def get_points(proxy=None):
-    try:
-        url = "https://app.appleville.xyz/api/trpc/core.getUser?batch=1"
-        r = requests.get(url, headers=headers, proxies=proxy, timeout=15)
-        if r.status_code == 200:
-            data = r.json()
-            points = data[0]["result"]["data"]["json"]["points"]
-            print(Fore.CYAN + f"💎 Current Points: {points}")
-        else:
-            print(Fore.YELLOW + f"⚠️ Could not fetch points: {r.text}")
-    except Exception as e:
-        print(Fore.YELLOW + f"⚠️ Points error: {e}")
-
+def get_points():
+    url = "https://app.appleville.xyz/api/points"
+    resp = debug_request("get", url)
+    if resp and resp.status_code == 200:
+        try:
+            return resp.json().get("points", 0)
+        except:
+            return 0
+    return 0
 
 def main():
-    cycle = 1
+    proxy = None
+    if PROXIES:
+        proxy = random.choice(PROXIES)
+        session.proxies.update({
+            "http": proxy,
+            "https": proxy
+        })
+
+    print(Fore.GREEN + f"=== 🚀 Running Account 1 with proxy: {proxy} ===")
+
     while True:
-        proxy = get_proxy()
-        print(Style.BRIGHT + Fore.MAGENTA + f"\n=== 🚀 Cycle {cycle} | Using Proxy: {proxy} ===")
+        # Harvest
+        print(Fore.YELLOW + "🌾 Trying to harvest...")
+        harvest()
 
-        get_points(proxy)
-        harvest(proxy)
-        buy(proxy)
-        plant(proxy)
+        # Buy
+        print(Fore.CYAN + "🛒 Trying to buy...")
+        buy()
 
-        print(Fore.BLUE + f"⏳ Waiting {CYCLE_DELAY} seconds before next cycle...")
-        cycle += 1
-        time.sleep(CYCLE_DELAY)
+        # Plant
+        print(Fore.GREEN + "🌱 Trying to plant...")
+        plant()
 
+        # Show Points
+        points = get_points()
+        print(Fore.MAGENTA + f"⭐ Current Points: {points}")
+
+        print(Fore.BLUE + "⏳ Waiting 30s before next cycle...\n")
+        time.sleep(30)
 
 if __name__ == "__main__":
     main()
