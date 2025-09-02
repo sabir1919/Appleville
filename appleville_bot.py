@@ -1,149 +1,123 @@
 import requests
 import time
-import sys
 import random
-from colorama import Fore, init
+import json
+import os
+from colorama import Fore, Style, init
 
+# Initialize colorama
 init(autoreset=True)
 
-CYCLE_DELAY = 30  # seconds between each cycle (adjust if needed)
-ITEM_KEY = "golden-apple"  # item to buy & plant
+# === CONFIG ===
+COOKIE_FILE = "cookies.txt"
+CYCLE_DELAY = 30  # seconds between each farming cycle
 
-# =========================
-# Progress Bar with Live Points
-# =========================
-def progress_bar(seconds, account_name, cookie, message="⏳ Next cycle in"):
-    total = seconds
-    for elapsed in range(total):
-        remaining = total - elapsed
-        percent = int((elapsed / total) * 100)
-        bar_length = 30
-        filled = int(bar_length * elapsed // total)
-        bar = "█" * filled + "░" * (bar_length - filled)
+# Load cookie from file
+if os.path.exists(COOKIE_FILE):
+    with open(COOKIE_FILE", "r") as f:
+        COOKIE = f.read().strip()
+else:
+    print(Fore.RED + f"❌ No {COOKIE_FILE} found. Please create it and paste your cookie inside.")
+    exit()
 
-        # Color changes
-        if remaining > total * 0.6:
-            color = Fore.GREEN
-        elif remaining > total * 0.3:
-            color = Fore.YELLOW
-        else:
-            color = Fore.RED
+# Load proxies if available
+proxies_list = []
+if os.path.exists("proxy.txt"):
+    with open("proxy.txt") as f:
+        proxies_list = [line.strip() for line in f if line.strip()]
 
-        # 🔄 Fetch live points
-        points_text = ""
-        if cookie:
-            try:
-                url = "https://app.appleville.xyz/api/trpc/core.getPoints?batch=1"
-                headers = {"Cookie": cookie, "Content-Type": "application/json"}
-                r = requests.post(url, headers=headers, json={})
-                if r.status_code == 200:
-                    data = r.json()
-                    points = data[0]["result"]["data"]["json"]["points"]
-                    points_text = f"💰 {points} pts"
-                else:
-                    points_text = "💰 --"
-            except:
-                points_text = "💰 --"
+# API Endpoints
+BASE_URL = "https://app.appleville.xyz/api/trpc/core"
+HARVEST_URL = f"{BASE_URL}.harvest?batch=1"
+BUY_URL = f"{BASE_URL}.buyItem?batch=1"
+PLANT_URL = f"{BASE_URL}.plantSeed?batch=1"
 
-        sys.stdout.write(
-            f"\r{Fore.CYAN}👤 {account_name} | {color}{message}: [{bar}] {percent}% ({remaining}s left) | {points_text}"
-        )
-        sys.stdout.flush()
-        time.sleep(1)
-    sys.stdout.write("\r" + " " * 120 + "\r")  # clear line
+# Headers
+headers = {
+    "Cookie": COOKIE,
+    "Content-Type": "application/json",
+    "Accept": "*/*",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Origin": "https://app.appleville.xyz",
+    "Referer": "https://app.appleville.xyz/",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                  "AppleWebKit/537.36 (KHTML, like Gecko) "
+                  "Chrome/116.0.0.0 Safari/537.36"
+}
 
 
-# =========================
-# Bot Actions
-# =========================
-def harvest(cookie, proxy=None):
-    url = "https://app.appleville.xyz/api/trpc/core.harvest?batch=1"
-    headers = {"Cookie": cookie, "Content-Type": "application/json"}
-    data = {"0": {"json": {"slotIndexes": [4]}}}
+def get_proxy():
+    if not proxies_list:
+        return None
+    proxy = random.choice(proxies_list)
+    return {"http": proxy, "https": proxy}
+
+
+def harvest(proxy=None):
+    payload = {"0": {"json": {"slotIndexes": [4]}}}
     try:
-        r = requests.post(url, headers=headers, json=data, proxies=proxy, timeout=15)
+        r = requests.post(HARVEST_URL, headers=headers, json=payload, proxies=proxy, timeout=15)
         if r.status_code == 200:
-            print(Fore.GREEN + "✅ Harvested successfully!")
+            print(Fore.GREEN + "✅ Harvest success:", r.text)
         else:
             print(Fore.RED + f"❌ Harvest failed: {r.text}")
     except Exception as e:
         print(Fore.RED + f"⚠️ Harvest error: {e}")
 
 
-def buy_item(cookie, proxy=None):
-    url = "https://app.appleville.xyz/api/trpc/core.buyItem?batch=1"
-    headers = {"Cookie": cookie, "Content-Type": "application/json"}
-    data = {"0": {"json": {"purchases": [{"key": ITEM_KEY, "quantity": 1}]}}}
+def buy(proxy=None):
+    payload = {"0": {"json": {"purchases": [{"key": "golden-apple", "quantity": 1}]}}}
     try:
-        r = requests.post(url, headers=headers, json=data, proxies=proxy, timeout=15)
+        r = requests.post(BUY_URL, headers=headers, json=payload, proxies=proxy, timeout=15)
         if r.status_code == 200:
-            print(Fore.GREEN + f"✅ Bought item: {ITEM_KEY}")
+            print(Fore.GREEN + "✅ Buy success:", r.text)
         else:
             print(Fore.RED + f"❌ Buy failed: {r.text}")
     except Exception as e:
         print(Fore.RED + f"⚠️ Buy error: {e}")
 
 
-def plant_seed(cookie, proxy=None):
-    url = "https://app.appleville.xyz/api/trpc/core.plantSeed?batch=1"
-    headers = {"Cookie": cookie, "Content-Type": "application/json"}
-    data = {"0": {"json": {"plantings": [{"slotIndex": 4, "seedKey": ITEM_KEY}]}}}
+def plant(proxy=None):
+    payload = {"0": {"json": {"plantings": [{"slotIndex": 4, "seedKey": "golden-apple"}]}}}
     try:
-        r = requests.post(url, headers=headers, json=data, proxies=proxy, timeout=15)
+        r = requests.post(PLANT_URL, headers=headers, json=payload, proxies=proxy, timeout=15)
         if r.status_code == 200:
-            print(Fore.GREEN + f"✅ Planted seed: {ITEM_KEY}")
+            print(Fore.GREEN + "✅ Plant success:", r.text)
         else:
             print(Fore.RED + f"❌ Plant failed: {r.text}")
     except Exception as e:
         print(Fore.RED + f"⚠️ Plant error: {e}")
 
 
-# =========================
-# Proxy Loader
-# =========================
-def load_proxies():
+def get_points(proxy=None):
     try:
-        with open("proxy.txt", "r") as f:
-            proxies = [line.strip() for line in f if line.strip()]
-        return proxies
-    except FileNotFoundError:
-        return []
+        url = "https://app.appleville.xyz/api/trpc/core.getUser?batch=1"
+        r = requests.get(url, headers=headers, proxies=proxy, timeout=15)
+        if r.status_code == 200:
+            data = r.json()
+            points = data[0]["result"]["data"]["json"]["points"]
+            print(Fore.CYAN + f"💎 Current Points: {points}")
+        else:
+            print(Fore.YELLOW + f"⚠️ Could not fetch points: {r.text}")
+    except Exception as e:
+        print(Fore.YELLOW + f"⚠️ Points error: {e}")
 
 
-def get_proxy(proxy_line):
-    if not proxy_line:
-        return None
-    return {"http": f"http://{proxy_line}", "https": f"http://{proxy_line}"}
-
-
-# =========================
-# Main Bot Loop
-# =========================
 def main():
-    # Load cookies
-    try:
-        with open("cookies.txt", "r") as f:
-            cookies = [line.strip() for line in f if line.strip()]
-    except FileNotFoundError:
-        print(Fore.RED + "❌ cookies.txt not found!")
-        return
-
-    proxies = load_proxies()
-
+    cycle = 1
     while True:
-        for i, cookie in enumerate(cookies):
-            proxy_line = random.choice(proxies) if proxies else None
-            proxy = get_proxy(proxy_line)
+        proxy = get_proxy()
+        print(Style.BRIGHT + Fore.MAGENTA + f"\n=== 🚀 Cycle {cycle} | Using Proxy: {proxy} ===")
 
-            account_name = f"Account {i+1}"
-            print(Fore.MAGENTA + f"\n=== 🚀 Running {account_name} with proxy: {proxy_line or 'None'} ===")
+        get_points(proxy)
+        harvest(proxy)
+        buy(proxy)
+        plant(proxy)
 
-            harvest(cookie, proxy)
-            buy_item(cookie, proxy)
-            plant_seed(cookie, proxy)
-
-            # ⏳ Wait cycle with live points
-            progress_bar(CYCLE_DELAY, account_name, cookie, message="⏳ Next cycle in")
+        print(Fore.BLUE + f"⏳ Waiting {CYCLE_DELAY} seconds before next cycle...")
+        cycle += 1
+        time.sleep(CYCLE_DELAY)
 
 
 if __name__ == "__main__":
